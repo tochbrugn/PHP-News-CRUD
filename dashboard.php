@@ -1,5 +1,28 @@
 <!DOCTYPE html>
-<?php include 'config/config.php'; ?>
+<?php
+include 'config/config.php';
+
+// Handle delete article request
+if (isset($_GET['delete']) && is_numeric($_GET['delete'])) {
+    $articleId = $_GET['delete'];
+    $stmt = $pdo->prepare("DELETE FROM articles WHERE id = ?");
+    $stmt->execute([$articleId]);
+    header("Location: dashboard.php?deleted=1");
+    exit;
+}
+
+// Handle success messages
+$successMessage = '';
+if (isset($_GET['success'])) {
+    $successMessage = 'Article added successfully!';
+} elseif (isset($_GET['deleted'])) {
+    $successMessage = 'Article deleted successfully!';
+} elseif (isset($_GET['updated'])) {
+    $successMessage = 'Article updated successfully!';
+} elseif (isset($_GET['error'])) {
+    $errorMessage = 'Article not found!';
+}
+?>
 
 <html class="light" lang="en">
 
@@ -8,7 +31,9 @@
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
     <title>News CMS - Article Management</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-    <link rel="icon" href="https://cdn.dribbble.com/userupload/46115772/file/ba2d5f2051ee6cb786a98f8815156efe.jpg?format=webp&resize=400x300&vertical=center" type="image/x-icon">
+    <link rel="icon"
+        href="https://cdn.dribbble.com/userupload/46115772/file/ba2d5f2051ee6cb786a98f8815156efe.jpg?format=webp&resize=400x300&vertical=center"
+        type="image/x-icon">
     <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600;700;800;900&amp;display=swap"
         rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700,0..1&amp;display=swap"
@@ -121,12 +146,14 @@
                     <div class="h-8 w-[1px] bg-slate-200 dark:border-slate-800 mx-2"></div>
                     <div class="flex items-center gap-3">
                         <div class="text-right hidden sm:block">
-                            <p class="text-xs font-bold leading-none">TOCH BRUGN</p>
-                            <p class="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Editor in Chief</p>
+                            <p class="text-xs font-bold leading-none">
+                                <?php echo htmlspecialchars($currentUser['name'] ?? 'User'); ?></p>
+                            <p class="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                                <?php echo htmlspecialchars($currentUser['role'] ?? 'User'); ?></p>
                         </div>
                         <img class="size-9 rounded-full bg-slate-200 object-cover border border-slate-200 dark:border-slate-700"
-                            data-alt="User avatar for Alex Rivera"
-                            src="./assets/images/TOCHBRUGN.jpg" />
+                            data-alt="User avatar for <?php echo htmlspecialchars($currentUser['name'] ?? 'User'); ?>"
+                            src="<?php echo htmlspecialchars($currentUser['avatar'] ?? 'https://ui-avatars.com/api/?name=' . urlencode($currentUser['name'] ?? 'User') . '&background=0D8ABC&color=fff'); ?>" />
                     </div>
                 </div>
             </header>
@@ -144,10 +171,15 @@
                         Add New Article
                     </a>
                 </div>
-                <?php if (isset($_GET['success'])): ?>
-                <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
-                    Article added successfully!
-                </div>
+                <?php if (isset($errorMessage)): ?>
+                    <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                        <?php echo htmlspecialchars($errorMessage); ?>
+                    </div>
+                <?php endif; ?>
+                <?php if ($successMessage): ?>
+                    <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
+                        <?php echo htmlspecialchars($successMessage); ?>
+                    </div>
                 <?php endif; ?>
                 <!-- Tabs -->
                 <div class="mb-6 flex items-center gap-1 border-b border-slate-200 dark:border-slate-800">
@@ -178,50 +210,69 @@
                             </thead>
                             <tbody class="divide-y divide-slate-200 dark:divide-slate-800">
                                 <?php
-                                $articles = $pdo->query("SELECT * FROM articles ORDER BY created_at DESC")->fetchAll();
+                                $articles = $pdo->query("
+                                    SELECT a.*, u.name as author_name, u.avatar as author_avatar, u.role as author_role 
+                                    FROM articles a 
+                                    LEFT JOIN users u ON a.author_id = u.id 
+                                    ORDER BY a.created_at DESC
+                                ")->fetchAll();
                                 foreach ($articles as $article):
-                                ?>
-                                <tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
-                                    <td class="px-6 py-5">
-                                        <div class="flex items-center gap-3">
-                                            <img class="size-12 rounded-lg object-cover" src="<?php echo htmlspecialchars($article['thumbnail'] ?: 'https://picsum.photos/150/150'); ?>" alt="Article thumbnail">
-                                            <div class="flex flex-col">
-                                                <span class="font-bold text-slate-900 dark:text-slate-100 text-sm line-clamp-1"><?php echo htmlspecialchars($article['title']); ?></span>
-                                                <span class="text-xs text-slate-400 mt-1">ID: #<?php echo $article['id']; ?></span>
+                                    ?>
+                                    <tr class="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                                        <td class="px-6 py-5">
+                                            <div class="flex items-center gap-3">
+                                                <img class="size-12 rounded-lg object-cover"
+                                                    src="<?php echo htmlspecialchars($article['thumbnail'] ?: 'https://ui-avatars.com/api/?name=' . urlencode(substr($article['title'], 0, 2)) . '&background=0D8ABC&color=fff&size=150'); ?>"
+                                                    alt="Article thumbnail">
+                                                <div class="flex flex-col">
+                                                    <span
+                                                        class="font-bold text-slate-900 dark:text-slate-100 text-sm line-clamp-1"><?php echo htmlspecialchars($article['title']); ?></span>
+                                                    <span class="text-xs text-slate-400 mt-1">ID:
+                                                        #<?php echo $article['id']; ?></span>
+                                                </div>
                                             </div>
-                                        </div>
-                                    </td>
-                                    <td class="px-6 py-5">
-                                        <span class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-xs font-bold"><?php echo htmlspecialchars(ucfirst($article['category'])); ?></span>
-                                    </td>
-                                    <td class="px-6 py-5">
-                                        <div class="flex items-center gap-2">
-                                            <img class="size-6 rounded-full" data-alt="Author avatar" src="https://picsum.photos/32/32" />
-                                            <span class="text-sm text-slate-600 dark:text-slate-400">Admin</span>
-                                        </div>
-                                    </td>
-                                    <td class="px-6 py-5 text-sm text-slate-500 dark:text-slate-400"><?php echo date('M d, Y', strtotime($article['created_at'])); ?></td>
-                                    <td class="px-6 py-5">
-                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 text-xs font-bold">
-                                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                                            Published
-                                        </span>
-                                    </td>
-                                    <td class="px-6 py-5 text-right">
-                                        <div class="flex items-center justify-end gap-2">
-                                            <button class="p-2 hover:bg-primary/10 text-slate-400 hover:text-primary rounded-lg transition-colors" title="Edit Article">
-                                                <span class="material-symbols-outlined text-xl">edit</span>
-                                            </button>
-                                            <button class="p-2 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-lg transition-colors" title="Delete Article">
-                                                <span class="material-symbols-outlined text-xl">delete</span>
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
+                                        </td>
+                                        <td class="px-6 py-5">
+                                            <span
+                                                class="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-xs font-bold"><?php echo htmlspecialchars(ucfirst($article['category'])); ?></span>
+                                        </td>
+                                        <td class="px-6 py-5">
+                                            <div class="flex items-center gap-2">
+                                                <img class="size-6 rounded-full" data-alt="Author avatar"
+                                                    src="<?php echo htmlspecialchars($article['author_avatar'] ?: 'https://ui-avatars.com/api/?name=' . urlencode($article['author_name'] ?? 'Admin') . '&background=0D8ABC&color=fff'); ?>" />
+                                                <span
+                                                    class="text-sm text-slate-600 dark:text-slate-400"><?php echo htmlspecialchars($article['author_name'] ?? 'Admin'); ?></span>
+                                            </div>
+                                        </td>
+                                        <td class="px-6 py-5 text-sm text-slate-500 dark:text-slate-400">
+                                            <?php echo date('M d, Y', strtotime($article['created_at'])); ?></td>
+                                        <td class="px-6 py-5">
+                                            <span
+                                                class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 text-xs font-bold">
+                                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                                Published
+                                            </span>
+                                        </td>
+                                        <td class="px-6 py-5 text-right">
+                                            <div class="flex items-center justify-end gap-2">
+                                                <a href="edit_article.php?id=<?php echo $article['id']; ?>"
+                                                    class="p-2 hover:bg-primary/10 text-slate-400 hover:text-primary rounded-lg transition-colors"
+                                                    title="Edit Article">
+                                                    <span class="material-symbols-outlined text-xl">edit</span>
+                                                </a>
+                                                <button
+                                                    class="p-2 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-lg transition-colors"
+                                                    title="Delete Article"
+                                                    onclick="if(confirm('Are you sure you want to delete this article?')) { window.location.href = 'dashboard.php?delete=<?php echo $article['id']; ?>'; }">
+                                                    <span class="material-symbols-outlined text-xl">delete</span>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
                                 <?php endforeach; ?>
                                 <!-- Static rows (commented out) -->
                                 <!-- Row 1 -->
-                                
+
                             </tbody>
                         </table>
                     </div>

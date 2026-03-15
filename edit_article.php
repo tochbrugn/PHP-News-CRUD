@@ -1,28 +1,43 @@
 <!DOCTYPE html>
-<?php include 'config/config.php'; ?>
-
 <?php
-// Simple authentication check - ensure user exists before allowing article creation
+include 'config/config.php';
+
+// Simple authentication check
 if (!isset($currentUser) || empty($currentUser)) {
-    // In production, redirect to login: header("Location: login.php?error=unauthorized"); exit;
-    // For demo, show error
-    die("Unauthorized: Please log in to create articles.");
+    die("Unauthorized: Please log in to edit articles.");
 }
 
+// Get article ID from URL
+$articleId = isset($_GET['id']) ? (int) $_GET['id'] : 0;
+
+// Fetch existing article
+$article = null;
+if ($articleId > 0) {
+    $stmt = $pdo->prepare("SELECT * FROM articles WHERE id = ?");
+    $stmt->execute([$articleId]);
+    $article = $stmt->fetch();
+}
+
+// If article not found, redirect to dashboard
+if (!$article) {
+    header("Location: dashboard.php?error=notfound");
+    exit;
+}
+
+// Handle form submission
 if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $title = trim($_POST['title']);
     $category = $_POST['category'];
     $content = trim($_POST['content']);
-    $thumbnail = trim($_POST['thumbnail']);
+    $thumbnail = $article['thumbnail']; // Keep existing thumbnail by default
 
     // Handle file upload
     if (!empty($_FILES['thumbnailFile']['name'])) {
         $target_dir = "assets/images/";
         $file_name = basename($_FILES["thumbnailFile"]["name"]);
-        $target_file = $target_dir . time() . "_" . $file_name; // Add timestamp to avoid conflicts
+        $target_file = $target_dir . time() . "_" . $file_name;
         $imageFileType = strtolower(pathinfo($target_file, PATHINFO_EXTENSION));
 
-        // Check if image file is a actual image
         $check = getimagesize($_FILES["thumbnailFile"]["tmp_name"]);
         if ($check !== false) {
             if (move_uploaded_file($_FILES["thumbnailFile"]["tmp_name"], $target_file)) {
@@ -31,14 +46,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         }
     }
 
-    // Insert into database
-    if (!empty($title) && !empty($category) && !empty($content)) {
-        $author_id = $currentUser['id'] ?? 1;
-        $stmt = $pdo->prepare("INSERT INTO articles (title, category, content, thumbnail, author_id, created_at) VALUES (?, ?, ?, ?, ?, NOW())");
-        $stmt->execute([$title, $category, $content, $thumbnail, $author_id]);
+    // Handle thumbnail URL from form
+    if (empty($_FILES['thumbnailFile']['name']) && !empty($_POST['thumbnail'])) {
+        $thumbnail = trim($_POST['thumbnail']);
+    }
 
-        // Redirect to dashboard
-        header("Location: dashboard.php?success=1");
+    // Update database
+    if (!empty($title) && !empty($category) && !empty($content)) {
+        $stmt = $pdo->prepare("UPDATE articles SET title = ?, category = ?, content = ?, thumbnail = ?, created_at = NOW() WHERE id = ?");
+        $stmt->execute([$title, $category, $content, $thumbnail, $articleId]);
+
+        header("Location: dashboard.php?updated=1");
         exit;
     }
 }
@@ -49,18 +67,17 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 <head>
     <meta charset="utf-8" />
     <meta content="width=device-width, initial-scale=1.0" name="viewport" />
-    <title>News CMS - Add New Article</title>
+    <title>News CMS - Edit Article</title>
 
     <link rel="icon"
         href="https://cdn.dribbble.com/userupload/46115772/file/ba2d5f2051ee6cb786a98f8815156efe.jpg?format=webp&resize=400x300&vertical=center"
         type="image/x-icon">
     <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600;700;800;900&amp;display=swap"
+    <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600;700;800;900&display=swap"
         rel="stylesheet" />
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700,0..1&amp;display=swap"
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700,0..1&display=swap"
         rel="stylesheet" />
-    <link
-        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap"
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
         rel="stylesheet" />
     <script id="tailwind-config">
         tailwind.config = {
@@ -182,9 +199,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 <!-- Page Title Area -->
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
                     <div>
-                        <h2 class="text-3xl font-black tracking-tight text-slate-900 dark:text-white">Add New Article
-                        </h2>
-                        <p class="text-slate-500 dark:text-slate-400 mt-1">Create a new news article.</p>
+                        <h2 class="text-3xl font-black tracking-tight text-slate-900 dark:text-white">Edit Article</h2>
+                        <p class="text-slate-500 dark:text-slate-400 mt-1">Update your news article.</p>
                     </div>
                     <a href="dashboard.php"
                         class="bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 px-5 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-transform active:scale-95">
@@ -195,12 +211,14 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                 <!-- Form -->
                 <div
                     class="bg-white dark:bg-slate-900/50 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm">
-                    <form action="#" method="post" enctype="multipart/form-data" class="space-y-6">
+                    <form action="edit_article.php?id=<?php echo $articleId; ?>" method="post"
+                        enctype="multipart/form-data" class="space-y-6">
                         <div>
                             <label for="title"
                                 class="block text-sm font-bold text-slate-900 dark:text-slate-100 mb-2">Article
                                 Title</label>
                             <input type="text" id="title" name="title"
+                                value="<?php echo htmlspecialchars($article['title'] ?? ''); ?>"
                                 class="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 transition-all outline-none"
                                 placeholder="Enter article title" required>
                         </div>
@@ -211,56 +229,59 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
                                 class="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 transition-all outline-none"
                                 required>
                                 <option value="">Select a category</option>
-                                <option value="finance">Finance</option>
-                                <option value="technology">Technology</option>
-                                <option value="politics">Politics</option>
-                                <option value="lifestyle">Lifestyle</option>
+                                <option value="finance" <?php echo (isset($article['category']) && $article['category'] == 'finance') ? 'selected' : ''; ?>>Finance</option>
+                                <option value="technology" <?php echo (isset($article['category']) && $article['category'] == 'technology') ? 'selected' : ''; ?>>Technology</option>
+                                <option value="politics" <?php echo (isset($article['category']) && $article['category'] == 'politics') ? 'selected' : ''; ?>>Politics</option>
+                                <option value="sports" <?php echo (isset($article['category']) && $article['category'] == 'sports') ? 'selected' : ''; ?>>Sports</option>
+                                <option value="entertainment" <?php echo (isset($article['category']) && $article['category'] == 'entertainment') ? 'selected' : ''; ?>>Entertainment</option>
+                                <option value="business" <?php echo (isset($article['category']) && $article['category'] == 'business') ? 'selected' : ''; ?>>Business</option>
+                                <option value="science" <?php echo (isset($article['category']) && $article['category'] == 'science') ? 'selected' : ''; ?>>Science</option>
+                                <option value="health" <?php echo (isset($article['category']) && $article['category'] == 'health') ? 'selected' : ''; ?>>Health</option>
                             </select>
-                        </div>
-                        <div>
-                            <label for="content"
-                                class="block text-sm font-bold text-slate-900 dark:text-slate-100 mb-2">Content</label>
-                            <textarea id="content" name="content" rows="10"
-                                class="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 transition-all outline-none"
-                                placeholder="Write your article content here..." required></textarea>
                         </div>
                         <div>
                             <label for="thumbnail"
                                 class="block text-sm font-bold text-slate-900 dark:text-slate-100 mb-2">Thumbnail
-                                Image</label>
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label
-                                        class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Image
-                                        URL</label>
-                                    <input type="url" id="thumbnail" name="thumbnail"
-                                        placeholder="https://example.com/image.jpg"
-                                        class="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 transition-all outline-none" />
-                                </div>
-                                <div>
-                                    <label
-                                        class="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Upload
-                                        file</label>
-                                    <input type="file" id="thumbnailFile" name="thumbnailFile" accept="image/*"
-                                        class="w-full text-sm text-slate-700 dark:text-slate-200" />
-                                </div>
-                            </div>
-                            <div class="mt-4">
-                                <div class="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Preview</div>
-                                <div
-                                    class="w-40 h-40 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                                    <img id="thumbnailPreview"
-                                        src="https://media.istockphoto.com/id/1303840298/vector/photo-upload-icon-picture-flat-icons-uploading-your-photo-logo-camera-sign-vector-eps-10-ui.jpg?s=612x612&w=0&k=20&c=vvG8i2sRmEUFbcCcPzfO4wVbXCk3Fi53kCmMY_1n3WE="
-                                        alt="Thumbnail preview" class="w-full h-full object-cover" />
-                                </div>
-                            </div>
+                                URL</label>
+                            <input type="url" id="thumbnail" name="thumbnail"
+                                value="<?php echo htmlspecialchars($article['thumbnail'] ?? ''); ?>"
+                                class="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 transition-all outline-none"
+                                placeholder="https://example.com/image.jpg">
+                            <p class="text-xs text-slate-500 mt-1">Or upload a file below</p>
                         </div>
-                        <div class="flex gap-4">
+                        <div>
+                            <label for="thumbnailFile"
+                                class="block text-sm font-bold text-slate-900 dark:text-slate-100 mb-2">Upload
+                                Thumbnail</label>
+                            <input type="file" id="thumbnailFile" name="thumbnailFile" accept="image/*"
+                                class="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 transition-all outline-none">
+                            <?php if (!empty($article['thumbnail'])): ?>
+                                <div class="mt-2">
+                                    <p class="text-xs text-slate-500 mb-2">Current thumbnail:</p>
+                                    <img src="<?php echo htmlspecialchars($article['thumbnail']); ?>"
+                                        alt="Current thumbnail" class="h-24 w-auto rounded-lg object-cover">
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                        <div>
+                            <label for="content"
+                                class="block text-sm font-bold text-slate-900 dark:text-slate-100 mb-2">Article
+                                Content</label>
+                            <textarea id="content" name="content" rows="12"
+                                class="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm focus:ring-2 focus:ring-primary/20 transition-all outline-none"
+                                placeholder="Write your article content here..."
+                                required><?php echo htmlspecialchars($article['content'] ?? ''); ?></textarea>
+                        </div>
+                        <div class="flex items-center gap-4 pt-4">
                             <button type="submit"
                                 class="bg-primary hover:bg-primary/90 text-white px-6 py-3 rounded-xl font-bold text-sm flex items-center gap-2 transition-transform active:scale-95 shadow-lg shadow-primary/20">
                                 <span class="material-symbols-outlined text-lg">save</span>
-                                Save Article
+                                Update Article
                             </button>
+                            <a href="dashboard.php"
+                                class="bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 px-6 py-3 rounded-xl font-bold text-sm">
+                                Cancel
+                            </a>
                         </div>
                     </form>
                 </div>
@@ -291,27 +312,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             </div>
         </main>
     </div>
-    <script>
-        const thumbnailInput = document.getElementById('thumbnail');
-        const thumbnailFile = document.getElementById('thumbnailFile');
-        const thumbnailPreview = document.getElementById('thumbnailPreview');
-
-        thumbnailInput.addEventListener('input', () => {
-            if (thumbnailInput.value) {
-                thumbnailPreview.src = thumbnailInput.value;
-            }
-        });
-
-        thumbnailFile.addEventListener('change', () => {
-            const file = thumbnailFile.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                thumbnailPreview.src = e.target.result;
-            };
-            reader.readAsDataURL(file);
-        });
-    </script>
 </body>
 
 </html>
